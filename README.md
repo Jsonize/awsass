@@ -1,4 +1,4 @@
-# npmass
+# awsass
 
 AWSASS is an assistant to AWS, mostly for running better scripts.
 
