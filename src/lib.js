@@ -1,7 +1,7 @@
 const AWS = require("aws-sdk");
 const Docker = require(__dirname + "/docker.js");
 
-module.exports = {
+const Module = {
 
     ecsCreateNewRevisionForContainer: function (taskDefinition, containerName, imageName, callback) {
         const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
@@ -49,7 +49,7 @@ module.exports = {
     },
 
     ecrLogin: function (callback) {
-        this.ecrLoginDetails(function (err, ecrLoginDetails) {
+        Module.ecrLoginDetails(function (err, ecrLoginDetails) {
             if (err) {
                 callback(err);
                 return;
@@ -61,7 +61,7 @@ module.exports = {
     },
 
     ecrTagPush: function (localImageName, imageName, callback) {
-        this.ecrLogin(function (err) {
+        Module.ecrLogin(function (err) {
             if (err) {
                 callback(err);
                 return;
@@ -79,15 +79,21 @@ module.exports = {
     },
 
     ecrEcsPushNewRevision: function (taskDefinition, containerName, localImageName, imageName, callback) {
-        this.ecrTagPush(localImageName, imageName, function (err) {
+        Module.ecrTagPush(localImageName, imageName, function (err) {
             if (err) {
                 callback(err);
                 return;
             }
-            this.ecsCreateNewRevisionForContainer(taskDefinition, containerName, imageName, function (err, ecsCreateNewRevisionForContainer) {
+            Module.ecsCreateNewRevisionForContainer(taskDefinition, containerName, imageName, function (err, ecsCreateNewRevisionForContainer) {
                 callback(err, ecsCreateNewRevisionForContainer);
             });
         });
-    }
+    }/*,
+
+    lambdaKillWarmInstances: function (lambdaFunction, callback) {
+
+    }*/
 
 };
+
+module.exports = Module;

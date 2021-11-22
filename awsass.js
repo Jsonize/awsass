@@ -10,7 +10,7 @@ const parsedArgs = GetOpt.create([
     ["", "ecr-login", "login to ecr"],
     ["", "ecr-tag-push", "tag and push to ecr"],
     ["", "ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision"],
-    ["", "lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment"],
+    //["", "lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment"],
     ["", "task-definition=TASKDEFINITION", "ecs task definition"],
     ["", "container-name=CONTAINERNAME", "container name"],
     ["", "image-name=IMAGENAME", "image name"],
@@ -40,7 +40,11 @@ if (parsedArgs.options["ecr-tag-push"])
 
 if (parsedArgs.options["ecr-ecs-push-new-revision"])
     Lib.ecrEcsPushNewRevision(parsedArgs.options["task-definition"], parsedArgs.options["container-name"], parsedArgs.options["local-image-name"], parsedArgs.options["image-name"], resultFunc);
-
+/*
+if (parsedArgs.options["lambda-kill-warm-instances"])
+    Lib.lambdaKillWarmInstances(parsedArgs.options["lambda-function"], resultFunc);
+*/
 // TODO: lambda version based routing
-// TODO: run on fargate
+// TODO: run temporarily on fargate
 // TODO: lambda flush cache
+// TODO: run task on aws/fargate
