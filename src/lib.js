@@ -21,10 +21,14 @@ const Module = {
                 callback(`Empty image name ${imageName}.`);
                 return;
             }
-            ecs.registerTaskDefinition({
-                family: taskDefinition,
-                containerDefinitions: containerDefinitions
-            }, function (err, registerTaskDefinition) {
+            delete describeTaskDefinition.taskDefinition.taskDefinitionArn;
+            delete describeTaskDefinition.taskDefinition.revision;
+            delete describeTaskDefinition.taskDefinition.status;
+            delete describeTaskDefinition.taskDefinition.requiresAttributes;
+            delete describeTaskDefinition.taskDefinition.compatibilities;
+            delete describeTaskDefinition.taskDefinition.registeredAt;
+            delete describeTaskDefinition.taskDefinition.registeredBy;
+            ecs.registerTaskDefinition(describeTaskDefinition.taskDefinition, function (err, registerTaskDefinition) {
                 callback(err, registerTaskDefinition);
             });
         });
