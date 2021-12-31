@@ -92,11 +92,53 @@ const Module = {
                 callback(err, ecsCreateNewRevisionForContainer);
             });
         });
-    }/*,
+    },
 
-    lambdaKillWarmInstances: function (lambdaFunction, callback) {
-
-    }*/
+    edgeLambdaKillWarmInstances: function (lambdaFunction, cloudfrontId, lambdaEdgeType, callback) {
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        const cloudfront = new AWS.CloudFront({apiVersion: '2020-05-31'});
+        lambda.updateFunctionConfiguration({
+            FunctionName: lambdaFunction,
+            Description: "AWSASS:" + (new Date()).getTime()
+        }, function (err) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            setTimeout(function () {
+                lambda.publishVersion({
+                    FunctionName: lambdaFunction
+                }, function (err, publishResult) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    cloudfront.getDistributionConfig({
+                        Id: cloudfrontId
+                    }, function (err, distributionConfig) {
+                        if (err) {
+                            callback(err);
+                            return;
+                        }
+                        const lambdaItems = distributionConfig.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociations.Items;
+                        let lambdaItem = null;
+                        lambdaItems.forEach(function (candidate) {
+                            if (candidate.EventType === lambdaEdgeType)
+                                lambdaItem = candidate;
+                        });
+                        let s = lambdaItem.LambdaFunctionARN.split(":");
+                        s[s.length - 1] = publishResult.Version;
+                        lambdaItem.LambdaFunctionARN = s.join(":");
+                        cloudfront.updateDistribution({
+                            Id: cloudfrontId,
+                            IfMatch: distributionConfig.ETag,
+                            DistributionConfig: distributionConfig.DistributionConfig
+                        }, callback);
+                    });
+                });
+            }, 5000);
+        });
+    }
 
 };
 

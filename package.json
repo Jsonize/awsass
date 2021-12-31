@@ -1,7 +1,7 @@
 {
     "name": "awsass",
     "description": "AWSASS is an assistant to AWS, mostly for running better scripts.",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "author": "Jsonize",
     "repository": "https://github.com/jsonize/awsass",
     "license": "Apache-2.0",
@@ -14,7 +14,7 @@
     "preferGlobal": true,
     "dependencies": {
         "aws-sdk": "",
-        "node-getopt": "git+https://git@github.com/tuxpoldo/node-getopt"
+        "commander": "^8.3.0"
     },
     "files": [
         "awsass.js",
