@@ -160,6 +160,41 @@ const Module = {
         });
     },
 
+    ecsTaskLogs: function (taskArn, clusterName, callback) {
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        const cloudwatchlogs = new AWS.CloudWatchLogs({apiVersion: '2014-03-28'});
+        ecs.describeTasks({
+            tasks: [taskArn],
+            cluster: clusterName
+        }, function (err, describeTasksData) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            ecs.describeTaskDefinition({
+                taskDefinition: describeTasksData.tasks[0].taskDefinitionArn
+            }, function (err, describeTaskDef) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                const logGroup = describeTaskDef.taskDefinition.containerDefinitions[0].logConfiguration.options['awslogs-group'];
+                const logStreamId = taskArn.split("/").pop();
+                cloudwatchlogs.getLogEvents({
+                    logGroupName: logGroup,
+                    logStreamName: logGroup.substring(1) + "/" + logStreamId,
+                    limit: 100
+                }, function(err, data) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    callback(undefined, data.events.map(event => event.message));
+                });
+            });
+        });
+    },
+
     edgeLambdaKillWarmInstances: function (lambdaFunction, cloudfrontId, lambdaEdgeType, callback) {
         const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
         const cloudfront = new AWS.CloudFront({apiVersion: '2020-05-31'});

@@ -10,9 +10,14 @@ program
     .option("--ecr-tag-push", "tag and push to ecr")
     .option("--ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision")
     .option("--ecs-run-on-fargate", "run ecs task on fargate")
+    .option("--ecs-task-logs", "read task logs")
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
     .option("--lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment")
+//    .option("--ecr-ecs-ephemeral-create", "creates an ephemeral ecr/ecs combination")
+//    .option("--ecr-ecs-ephemeral-destroy", "destroys an ephemeral ecr/ecs combination")
+//    .option("--version-based-lambda-deploy", "deploy a version-based lambda function")
     .option("--task-definition <task-definition>", "ecs task definition")
+    .option("--task-arn <task-arn>", "ecs task arn")
     .option("--cluster-name <cluster-name>", "ecs cluster name")
     .option("--container-name <container-name>", "container name")
     .option("--image-name <image-name>", "image name")
@@ -51,11 +56,11 @@ if (options["ecrEcsPushNewRevision"])
 if (options["ecsRunOnFargate"])
     Lib.ecsRunOnFargate(options["taskDefinition"], options["clusterName"], options["environmentVariable"], resultFunc);
 
+if (options["ecsTaskLogs"])
+    Lib.ecsTaskLogs(options["taskArn"], options["clusterName"], resultFunc);
+
 if (options["edgeLambdaKillWarmInstances"])
     Lib.edgeLambdaKillWarmInstances(options["lambdaFunction"], options["cloudfrontId"], options["lambdaEdgeType"], resultFunc);
 
 if (options["lambdaKillWarmInstances"])
     Lib.lambdaKillWarmInstances(options["lambdaFunction"], resultFunc);
-
-// TODO: lambda version based routing deploy
-// TODO: run temporarily on fargate
