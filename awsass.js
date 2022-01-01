@@ -10,6 +10,7 @@ program
     .option("--ecr-tag-push", "tag and push to ecr")
     .option("--ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision")
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
+    .option("--lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment")
     .option("--task-definition <task-definition>", "ecs task definition")
     .option("--container-name <container-name>", "container name")
     .option("--image-name <image-name>", "image name")
@@ -47,8 +48,9 @@ if (options["ecrEcsPushNewRevision"])
 if (options["edgeLambdaKillWarmInstances"])
     Lib.edgeLambdaKillWarmInstances(options["lambdaFunction"], options["cloudfrontId"], options["lambdaEdgeType"], resultFunc);
 
+if (options["lambdaKillWarmInstances"])
+    Lib.lambdaKillWarmInstances(options["lambdaFunction"], resultFunc);
 
 // TODO: lambda version based routing deploy
 // TODO: run temporarily on fargate
-// TODO: lambda flush cache normal lambda
 // TODO: run task on aws/fargate

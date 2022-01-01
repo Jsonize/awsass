@@ -138,6 +138,33 @@ const Module = {
                 });
             }, 5000);
         });
+    },
+
+    lambdaKillWarmInstances: function (lambdaFunction, callback) {
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        lambda.getFunctionConfiguration({
+            FunctionName: lambdaFunction,
+        }, function (err, functionConfiguration) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            functionConfiguration.Environment.Variables.AWSASS = "" + (new Date()).getTime();
+            lambda.updateFunctionConfiguration({
+                FunctionName: lambdaFunction,
+                Environment: functionConfiguration.Environment
+            }, function (err) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                setTimeout(function () {
+                    lambda.publishVersion({
+                        FunctionName: lambdaFunction
+                    }, callback);
+                }, 5000);
+            });
+        });
     }
 
 };
