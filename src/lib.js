@@ -1,6 +1,19 @@
 const AWS = require("aws-sdk");
 const Docker = require(__dirname + "/docker.js");
 
+const nameValueArrayToObject = function (arr) {
+    let result = {};
+    arr.forEach(nv => result[nv.name] = nv.value);
+    return result;
+};
+
+const objectToNameValueArray = function (obj) {
+    let result = [];
+    for (let key in obj)
+        result.push({name: key, value: obj[key]});
+    return result;
+};
+
 const Module = {
 
     ecsCreateNewRevisionForContainer: function (taskDefinition, containerName, imageName, callback) {
@@ -90,6 +103,59 @@ const Module = {
             }
             Module.ecsCreateNewRevisionForContainer(taskDefinition, containerName, imageName, function (err, ecsCreateNewRevisionForContainer) {
                 callback(err, ecsCreateNewRevisionForContainer);
+            });
+        });
+    },
+
+    ec2GetSubnets: function (callback) {
+        const ec2 = new AWS.EC2({apiVersion: '2016-11-15'});
+        ec2.describeSubnets({}, function (err, subnetsDescription) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            callback(undefined, subnetsDescription.Subnets.map(subnet => subnet.SubnetId));
+        });
+    },
+
+    ecsRunOnFargate: function (taskDefinition, clusterName, environmentVariables, callback) {
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        ecs.describeTaskDefinition({taskDefinition: taskDefinition}, function (err, describeTaskDefinition) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            const containerOverrides = environmentVariables ? describeTaskDefinition.taskDefinition.containerDefinitions.map(containerDef => {
+                let env = nameValueArrayToObject(containerDef.environment);
+                environmentVariables.forEach(kv => {
+                    const splt = kv.split(":");
+                    env[splt.shift()] = splt.join(":");
+                });
+                env = objectToNameValueArray(env);
+                return {
+                    name: containerDef.name,
+                    environment: env
+                };
+            }) : undefined;
+            Module.ec2GetSubnets(function (err, subnets) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                ecs.runTask({
+                    taskDefinition: taskDefinition,
+                    cluster: clusterName,
+                    launchType: "FARGATE",
+                    networkConfiguration: {
+                        awsvpcConfiguration: {
+                            assignPublicIp: "ENABLED",
+                            subnets: subnets
+                        }
+                    },
+                    overrides: containerOverrides ? {
+                        containerOverrides: containerOverrides
+                    } : undefined
+                }, callback);
             });
         });
     },

@@ -9,15 +9,18 @@ program
     .option("--ecr-login", "login to ecr")
     .option("--ecr-tag-push", "tag and push to ecr")
     .option("--ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision")
+    .option("--ecs-run-on-fargate", "run ecs task on fargate")
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
     .option("--lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment")
     .option("--task-definition <task-definition>", "ecs task definition")
+    .option("--cluster-name <cluster-name>", "ecs cluster name")
     .option("--container-name <container-name>", "container name")
     .option("--image-name <image-name>", "image name")
     .option("--local-image-name <local-image-name>", "local image name")
     .option("--lambda-function <lambda-function>", "lambda function")
     .option("--lambda-edge-type <lambda-edge-type>", "lambda edge type")
-    .option("--cloudfront-id <cloudfront-id>", "cloudfront id");
+    .option("--cloudfront-id <cloudfront-id>", "cloudfront id")
+    .option("--environment-variable <keyvalue...>", "overwrite environment variable key:value")
 
 program.parse(process.argv);
 const options = program.opts();
@@ -45,6 +48,9 @@ if (options["ecrTagPush"])
 if (options["ecrEcsPushNewRevision"])
     Lib.ecrEcsPushNewRevision(options["taskDefinition"], options["containerName"], options["localImageName"], options["imageName"], resultFunc);
 
+if (options["ecsRunOnFargate"])
+    Lib.ecsRunOnFargate(options["taskDefinition"], options["clusterName"], options["environmentVariable"], resultFunc);
+
 if (options["edgeLambdaKillWarmInstances"])
     Lib.edgeLambdaKillWarmInstances(options["lambdaFunction"], options["cloudfrontId"], options["lambdaEdgeType"], resultFunc);
 
@@ -53,4 +59,3 @@ if (options["lambdaKillWarmInstances"])
 
 // TODO: lambda version based routing deploy
 // TODO: run temporarily on fargate
-// TODO: run task on aws/fargate
