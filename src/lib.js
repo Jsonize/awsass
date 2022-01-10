@@ -1,5 +1,6 @@
 const AWS = require("aws-sdk");
 const Docker = require(__dirname + "/docker.js");
+const OS = require("os");
 
 const nameValueArrayToObject = function (arr) {
     let result = {};
@@ -264,6 +265,99 @@ const Module = {
                         FunctionName: lambdaFunction
                     }, callback);
                 }, 5000);
+            });
+        });
+    },
+
+    ecrEcsEphemeralCreate: function (executionRoleArn, taskRoleArn, cpuUnits, memoryUnits, callback) {
+        const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        const cloudwatchlogs = new AWS.CloudWatchLogs({apiVersion: '2014-03-28'});
+        const ephemeralId = "awsass-ephemeral-" + OS.userInfo().username + "-" + (new Date()).getTime();
+        ecr.createRepository({
+            repositoryName: ephemeralId
+        }, function (err, createRepoResult) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            ecs.registerTaskDefinition({
+                family: ephemeralId,
+                cpu: cpuUnits,
+                memory: memoryUnits,
+                networkMode: "awsvpc",
+                executionRoleArn: executionRoleArn,
+                taskRoleArn: taskRoleArn,
+                requiresCompatibilities: ["FARGATE"],
+                containerDefinitions: [{
+                    name: ephemeralId,
+                    essential: true,
+                    memoryReservation: memoryUnits,
+                    cpu: cpuUnits,
+                    image: createRepoResult.repository.repositoryUri,
+                    logConfiguration: {
+                        logDriver: "awslogs",
+                        options: {
+                            "awslogs-group": "/ecs/" + ephemeralId,
+                            "awslogs-region": AWS.config.region,
+                            "awslogs-stream-prefix": "ecs"
+                        }
+                    }
+                }]
+            }, function (err, registerTaskDef) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                cloudwatchlogs.createLogGroup({
+                    logGroupName: "/ecs/" + ephemeralId,
+                }, function (err, logGroupResult) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    callback(undefined, {
+                        ephemeralId: ephemeralId,
+                        repositoryUri: createRepoResult.repository.repositoryUri,
+                        taskDefinitionArn: registerTaskDef.taskDefinition.taskDefinitionArn
+                    });
+                });
+            });
+        });
+    },
+
+    ecrEcsEphemeralDestroy: function (ephemeralId, callback) {
+        const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        const cloudwatchlogs = new AWS.CloudWatchLogs({apiVersion: '2014-03-28'});
+        cloudwatchlogs.deleteLogGroup({
+            logGroupName: "/ecs/" + ephemeralId
+        }, function (err, logGroupResult) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            ecs.deregisterTaskDefinition({
+                taskDefinition: ephemeralId + ":1"
+            }, function (err, deregisterTaskDef) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                ecr.deleteRepository({
+                    repositoryName: ephemeralId,
+                    force: true
+                }, function (err, deleteRepoResult) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    callback(undefined, {
+                        ephemeralId: ephemeralId,
+                        repositoryUri: deleteRepoResult.repository.repositoryUri,
+                        taskDefinitionArn: deregisterTaskDef.taskDefinition.taskDefinitionArn
+                    });
+                });
             });
         });
     }

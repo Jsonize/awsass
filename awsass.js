@@ -13,8 +13,8 @@ program
     .option("--ecs-task-logs", "read task logs")
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
     .option("--lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment")
-//    .option("--ecr-ecs-ephemeral-create", "creates an ephemeral ecr/ecs combination")
-//    .option("--ecr-ecs-ephemeral-destroy", "destroys an ephemeral ecr/ecs combination")
+    .option("--ecr-ecs-ephemeral-create", "creates an ephemeral ecr/ecs combination")
+    .option("--ecr-ecs-ephemeral-destroy", "destroys an ephemeral ecr/ecs combination")
 //    .option("--version-based-lambda-deploy", "deploy a version-based lambda function")
     .option("--task-definition <task-definition>", "ecs task definition")
     .option("--task-arn <task-arn>", "ecs task arn")
@@ -26,6 +26,12 @@ program
     .option("--lambda-edge-type <lambda-edge-type>", "lambda edge type")
     .option("--cloudfront-id <cloudfront-id>", "cloudfront id")
     .option("--environment-variable <keyvalue...>", "overwrite environment variable key:value")
+    .option("--execution-role-arn <execution-role-arn>", "execution-role-arn")
+    .option("--task-role-arn <task-role-arn>", "task-role-arn")
+    .option("--cpu-units <cpu-units>", "cpu-units", "256")
+    .option("--memory-units <memory-units>", "memory-units", "512")
+    .option("--ephemeral-id <ephemeral-id>", "ephemeral id");
+
 
 program.parse(process.argv);
 const options = program.opts();
@@ -64,3 +70,9 @@ if (options["edgeLambdaKillWarmInstances"])
 
 if (options["lambdaKillWarmInstances"])
     Lib.lambdaKillWarmInstances(options["lambdaFunction"], resultFunc);
+
+if (options["ecrEcsEphemeralCreate"])
+    Lib.ecrEcsEphemeralCreate(options["executionRoleArn"], options["taskRoleArn"], options["cpuUnits"], options["memoryUnits"], resultFunc);
+
+if (options["ecrEcsEphemeralDestroy"])
+    Lib.ecrEcsEphemeralDestroy(options["ephemeralId"], resultFunc);
