@@ -196,53 +196,48 @@ const Module = {
         });
     },
 
-    edgeLambdaKillWarmInstances: function (lambdaFunction, cloudfrontId, lambdaEdgeType, callback) {
+    resilientPublishLambdaVersion: function (lambdaFunction, callback, baseDelay, maxExponent) {
         const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
-        const cloudfront = new AWS.CloudFront({apiVersion: '2020-05-31'});
-        lambda.updateFunctionConfiguration({
-            FunctionName: lambdaFunction,
-            Description: "AWSASS:" + (new Date()).getTime()
-        }, function (err) {
+        baseDelay = baseDelay || 1000;
+        maxExponent = maxExponent || 5;
+        if (maxExponent <= 0)
+            callback("Exceeded publish timeout");
+        lambda.publishVersion({
+            FunctionName: lambdaFunction
+        }, function (err, result) {
+            if (err) {
+                Module.resilientPublishLambdaVersion(lambdaFunction, callback, baseDelay * 2, maxExponent - 1);
+                return;
+            }
+            callback(undefined, result);
+        });
+    },
+
+    resilientUpdateConfigurationPublishLambdaVersion: function (lambdaFunction, configurationUpdate, callback, baseDelay, maxExponent) {
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        configurationUpdate.FunctionName = lambdaFunction;
+        lambda.updateFunctionConfiguration(configurationUpdate, function (err) {
             if (err) {
                 callback(err);
                 return;
             }
-            setTimeout(function () {
-                lambda.publishVersion({
-                    FunctionName: lambdaFunction
-                }, function (err, publishResult) {
-                    if (err) {
-                        callback(err);
-                        return;
-                    }
-                    cloudfront.getDistributionConfig({
-                        Id: cloudfrontId
-                    }, function (err, distributionConfig) {
-                        if (err) {
-                            callback(err);
-                            return;
-                        }
-                        const lambdaItems = distributionConfig.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociations.Items;
-                        let lambdaItem = null;
-                        lambdaItems.forEach(function (candidate) {
-                            if (candidate.EventType === lambdaEdgeType)
-                                lambdaItem = candidate;
-                        });
-                        let s = lambdaItem.LambdaFunctionARN.split(":");
-                        s[s.length - 1] = publishResult.Version;
-                        lambdaItem.LambdaFunctionARN = s.join(":");
-                        cloudfront.updateDistribution({
-                            Id: cloudfrontId,
-                            IfMatch: distributionConfig.ETag,
-                            DistributionConfig: distributionConfig.DistributionConfig
-                        }, callback);
-                    });
-                });
-            }, 5000);
+            Module.resilientPublishLambdaVersion(lambdaFunction, callback, baseDelay, maxExponent);
         });
     },
 
-    lambdaKillWarmInstances: function (lambdaFunction, callback) {
+    resilientUpdateFunctionCodePublishLambdaVersion: function (lambdaFunction, functionCodeUpdate, callback, baseDelay, maxExponent) {
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        functionCodeUpdate.FunctionName = lambdaFunction;
+        lambda.updateFunctionCode(functionCodeUpdate, function (err) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            Module.resilientPublishLambdaVersion(lambdaFunction, callback, baseDelay, maxExponent);
+        });
+    },
+
+    resilientMapConfigurationPublishLambdaVersion: function (lambdaFunction, configurationUpdateFunction, callback, baseDelay, maxExponent) {
         const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
         lambda.getFunctionConfiguration({
             FunctionName: lambdaFunction,
@@ -251,22 +246,51 @@ const Module = {
                 callback(err);
                 return;
             }
-            functionConfiguration.Environment.Variables.AWSASS = "" + (new Date()).getTime();
-            lambda.updateFunctionConfiguration({
-                FunctionName: lambdaFunction,
-                Environment: functionConfiguration.Environment
-            }, function (err) {
+            Module.resilientUpdateConfigurationPublishLambdaVersion(lambdaFunction, configurationUpdateFunction(functionConfiguration), callback, baseDelay, maxExponent);
+        });
+    },
+
+    edgeLambdaKillWarmInstances: function (lambdaFunction, cloudfrontId, lambdaEdgeType, callback) {
+        const cloudfront = new AWS.CloudFront({apiVersion: '2020-05-31'});
+        Module.resilientUpdateConfigurationPublishLambdaVersion(lambdaFunction, {
+            Description: "AWSASS:" + (new Date()).getTime()
+        }, function (err, publishResult) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            cloudfront.getDistributionConfig({
+                Id: cloudfrontId
+            }, function (err, distributionConfig) {
                 if (err) {
                     callback(err);
                     return;
                 }
-                setTimeout(function () {
-                    lambda.publishVersion({
-                        FunctionName: lambdaFunction
-                    }, callback);
-                }, 5000);
+                const lambdaItems = distributionConfig.DistributionConfig.DefaultCacheBehavior.LambdaFunctionAssociations.Items;
+                let lambdaItem = null;
+                lambdaItems.forEach(function (candidate) {
+                    if (candidate.EventType === lambdaEdgeType)
+                        lambdaItem = candidate;
+                });
+                let s = lambdaItem.LambdaFunctionARN.split(":");
+                s[s.length - 1] = publishResult.Version;
+                lambdaItem.LambdaFunctionARN = s.join(":");
+                cloudfront.updateDistribution({
+                    Id: cloudfrontId,
+                    IfMatch: distributionConfig.ETag,
+                    DistributionConfig: distributionConfig.DistributionConfig
+                }, callback);
             });
         });
+    },
+
+    lambdaKillWarmInstances: function (lambdaFunction, callback) {
+        Module.resilientMapConfigurationPublishLambdaVersion(lambdaFunction, function (functionConfiguration) {
+            functionConfiguration.Environment.Variables.AWSASS = "" + (new Date()).getTime();
+            return {
+                Environment: functionConfiguration.Environment
+            };
+        }, callback);
     },
 
     ecrEcsEphemeralCreate: function (executionRoleArn, taskRoleArn, cpuUnits, memoryUnits, callback) {
@@ -358,6 +382,115 @@ const Module = {
                         taskDefinitionArn: deregisterTaskDef.taskDefinition.taskDefinitionArn
                     });
                 });
+            });
+        });
+    },
+
+    lambdaUpdatePublishS3: function (lambdaFunction, s3Bucket, s3Key, callback) {
+        Module.resilientUpdateFunctionCodePublishLambdaVersion(lambdaFunction, {
+            S3Bucket: s3Bucket,
+            S3Key: s3Key
+        }, callback);
+    },
+
+    apiGatewayAddLambdaPermission: function (restApiId, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, callback) {
+        const sts = new AWS.STS({apiVersion: "2011-06-15"});;
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        sts.getCallerIdentity({}, function(err, callerId) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            lambda.addPermission({
+                FunctionName: lambdaFunction + (lambdaFunctionVersion ? ":" + lambdaFunctionVersion : ""),
+                StatementId: "apigateway" + (lambdaFunctionVersion ? "-" + lambdaFunctionVersion : "") + "-" + (new Date()).getTime(),
+                Action: "lambda:InvokeFunction",
+                Principal: "apigateway.amazonaws.com",
+                SourceArn: ["arn:aws:execute-api", AWS.config.region, callerId.Account, [restApiId, "*", "*", apiGatewaySubPath].join("/")].join(":")
+            }, callback);
+        });
+    },
+
+    apiGatewayDeployLambdaProxySubRoute: function (restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, callback) {
+        const apigateway = new AWS.APIGateway({apiVersion: "2015-07-09"});
+        apigateway.getExport({
+            restApiId: restApiId,
+            stageName: stageName,
+            exportType: "swagger",
+            parameters: {
+                extensions: "apigateway"
+            }
+        }, function (err, exportResponse) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            let swaggerSub;
+            try {
+                const swaggerBase = JSON.parse(exportResponse.body);
+                console.log(swaggerBase);
+                const subIntegration = swaggerBase.paths[apiGatewayBasePath]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"];
+                delete subIntegration.cacheNamespace;
+                if (lambdaFunction) {
+                    let splt = subIntegration.uri.split("/");
+                    let splt2 = splt[splt.length - 2].split(":");
+                    splt2[6] = lambdaFunction;
+                    splt[splt.length - 2] = splt2.join(":");
+                    subIntegration.uri = splt.join("/");
+                }
+                if (lambdaFunctionVersion) {
+                    let splt = subIntegration.uri.split("/");
+                    let splt2 = splt[splt.length - 2].split(":");
+                    splt2[7] = lambdaFunctionVersion;
+                    splt[splt.length - 2] = splt2.join(":");
+                    subIntegration.uri = splt.join("/");
+                }
+                swaggerSub = {
+                    swagger: swaggerBase.swagger,
+                    info: swaggerBase.info,
+                    paths: {}
+                };
+                swaggerSub.paths[apiGatewaySubPath] = swaggerBase.paths[apiGatewayBasePath];
+            } catch (e) {
+                callback("Malformed swagger");
+                return;
+            }
+            apigateway.putRestApi({
+                restApiId: restApiId,
+                mode: "merge",
+                parameters: {
+                    ignore: "documentation"
+                },
+                body: JSON.stringify(swaggerSub)
+            }, function (err) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                apigateway.createDeployment({
+                    restApiId: restApiId,
+                    stageName: stageName
+                }, callback);
+            })
+        });
+    },
+
+    apiGatewayLambdaDeploySub: function (restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, s3Bucket, s3Key, callback) {
+        Module.lambdaUpdatePublishS3(lambdaFunction, s3Bucket, s3Key, function (err, lambdaResult) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            const lambdaFunctionVersion = lambdaResult.Version;
+            const splt = apiGatewaySubPath.split("/");
+            splt[splt.length - 1] = "*";
+            const apiGatewaySubPathMapping = splt.join("/");;
+            Module.apiGatewayAddLambdaPermission(restApiId, apiGatewaySubPathMapping, lambdaFunction, lambdaFunctionVersion, function (err) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                Module.apiGatewayDeployLambdaProxySubRoute(restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, callback);
             });
         });
     }
