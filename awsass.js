@@ -42,7 +42,8 @@ program
     .option("--api-gateway-sub-path <sub path>", "api gateway sub path")
     .option("--ephemeral-id <ephemeral-id>", "ephemeral id");
 
-
+// TODO: deploy lambda function directly without s3
+// TODO: deploy lambda@edge function
 
 program.parse(process.argv);
 const options = program.opts();

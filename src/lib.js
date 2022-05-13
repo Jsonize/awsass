@@ -115,7 +115,7 @@ const Module = {
                 callback(err);
                 return;
             }
-            callback(undefined, subnetsDescription.Subnets.map(subnet => subnet.SubnetId));
+            callback(undefined, subnetsDescription.Subnets.filter(subnet => subnet.DefaultForAz).map(subnet => subnet.SubnetId));
         });
     },
 
