@@ -35,6 +35,7 @@ program
     .option("--execution-role-arn <execution-role-arn>", "execution-role-arn")
     .option("--task-role-arn <task-role-arn>", "task-role-arn")
     .option("--cpu-units <cpu-units>", "cpu-units", "256")
+    .option("--remove-smallest-version", "remove smallest version")
     .option("--memory-units <memory-units>", "memory-units", "512")
     .option("--rest-api-id <rest-api-id>", "api gateway rest api id")
     .option("--stage-name <stage-name>", "api gateway stage-name", "production")
@@ -93,10 +94,10 @@ if (options["ecrEcsEphemeralDestroy"])
     Lib.ecrEcsEphemeralDestroy(options["ephemeralId"], resultFunc);
 
 if (options["apiGatewayDeployLambdaProxySubRoute"])
-    Lib.apiGatewayDeployLambdaProxySubRoute(options["restApiId"], options["stageName"], options["apiGatewayBasePath"], options["apiGatewaySubPath"], options["lambdaFunction"], options["lambdaFunctionVersion"], resultFunc);
+    Lib.apiGatewayDeployLambdaProxySubRoute(options["restApiId"], options["stageName"], options["apiGatewayBasePath"], options["apiGatewaySubPath"], options["lambdaFunction"], options["lambdaFunctionVersion"], options["removeSmallestVersion"], resultFunc);
 
 if (options["apiGatewayAddLambdaPermission"])
     Lib.apiGatewayAddLambdaPermission(options["restApiId"], options["apiGatewaySubPath"], options["lambdaFunction"], options["lambdaFunctionVersion"], resultFunc);
 
 if (options["apiGatewayLambdaDeploySub"])
-    Lib.apiGatewayLambdaDeploySub(options["restApiId"], options["stageName"], options["apiGatewayBasePath"], options["apiGatewaySubPath"], options["lambdaFunction"], options["s3Bucket"], options["s3Key"], resultFunc);
+    Lib.apiGatewayLambdaDeploySub(options["restApiId"], options["stageName"], options["apiGatewayBasePath"], options["apiGatewaySubPath"], options["lambdaFunction"], options["s3Bucket"], options["s3Key"], options["removeSmallestVersion"], resultFunc);

@@ -411,7 +411,7 @@ const Module = {
         });
     },
 
-    apiGatewayDeployLambdaProxySubRoute: function (restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, callback) {
+    apiGatewayDeployLambdaProxySubRoute: function (restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, removeSmallestVersion, callback) {
         const apigateway = new AWS.APIGateway({apiVersion: "2015-07-09"});
         apigateway.getExport({
             restApiId: restApiId,
@@ -470,12 +470,63 @@ const Module = {
                 apigateway.createDeployment({
                     restApiId: restApiId,
                     stageName: stageName
-                }, callback);
-            })
+                }, function (err, result) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    if (removeSmallestVersion) {
+                        const swaggerBase = JSON.parse(exportResponse.body);
+                        const subIntegration = swaggerBase.paths[apiGatewayBasePath]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"];
+                        let smallestVersion = null;
+                        const subIntegrationBase = (subIntegration.uri.split("/invocations"))[0];
+                        for (let proxyKey in swaggerBase.paths) {
+                            const lambdaUri = swaggerBase.paths[proxyKey]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"].uri;
+                            if (lambdaUri.indexOf(subIntegrationBase) === 0) {
+                                const lambdaVersion = parseInt(lambdaUri.substring(subIntegrationBase.length + 1), 10);
+                                if (!isNaN(lambdaVersion)) {
+                                    if (!smallestVersion || smallestVersion.version > lambdaVersion) {
+                                        smallestVersion = {
+                                            proxyKey: proxyKey,
+                                            version: lambdaVersion
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                        if (smallestVersion) {
+                            apigateway.getResources({
+                                restApiId: restApiId,
+                                limit: 500
+                            }, function (err, resourcesResponse) {
+                                if (err !== null) {
+                                    callback(err);
+                                    return;
+                                }
+                                let smallestVersionId = resourcesResponse.items.find(item => item.path === smallestVersion.proxyKey);
+                                if (smallestVersionId) {
+                                    console.log("Removing smallest version", smallestVersion, smallestVersionId);
+                                    apigateway.deleteResource({
+                                        restApiId: restApiId,
+                                        resourceId: smallestVersionId.id
+                                    }, function (err) {
+                                        if (err !== null) {
+                                            callback(err);
+                                            return;
+                                        }
+                                        callback(undefined, result);
+                                    });
+                                }
+                            });
+                        }
+                    } else
+                        callback(undefined, result);
+                });
+            });
         });
     },
 
-    apiGatewayLambdaDeploySub: function (restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, s3Bucket, s3Key, callback) {
+    apiGatewayLambdaDeploySub: function (restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, s3Bucket, s3Key, removeSmallestVersion, callback) {
         Module.lambdaUpdatePublishS3(lambdaFunction, s3Bucket, s3Key, function (err, lambdaResult) {
             if (err) {
                 callback(err);
@@ -490,7 +541,7 @@ const Module = {
                     callback(err);
                     return;
                 }
-                Module.apiGatewayDeployLambdaProxySubRoute(restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, callback);
+                Module.apiGatewayDeployLambdaProxySubRoute(restApiId, stageName, apiGatewayBasePath, apiGatewaySubPath, lambdaFunction, lambdaFunctionVersion, removeSmallestVersion, callback);
             });
         });
     }
