@@ -14,6 +14,7 @@ program
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
     .option("--lambda-kill-warm-instances", "kill warm lambda instances by doing a silent redeployment")
     .option("--lambda-update-publish-s3", "update and publish new lambda version from s3 object")
+    .option("--lambda-update-publish-local", "update and publish new lambda version from local file")
     .option("--ecr-ecs-ephemeral-create", "creates an ephemeral ecr/ecs combination")
     .option("--ecr-ecs-ephemeral-destroy", "destroys an ephemeral ecr/ecs combination")
     .option("--api-gateway-lambda-deploy-sub", "deploy a sub lambda function with api gateway")
@@ -25,6 +26,7 @@ program
     .option("--container-name <container-name>", "container name")
     .option("--image-name <image-name>", "image name")
     .option("--local-image-name <local-image-name>", "local image name")
+    .option("--zip-file <file-name>", "file name")
     .option("--s3-bucket <s3-bucket>", "s3 bucket")
     .option("--s3-key <s3-key>", "s3 key")
     .option("--lambda-function <lambda-function>", "lambda function")
@@ -86,6 +88,9 @@ if (options["lambdaKillWarmInstances"])
 
 if (options["lambdaUpdatePublishS3"])
     Lib.lambdaUpdatePublishS3(options["lambdaFunction"], options["s3Bucket"], options["s3Key"], resultFunc);
+
+if (options["lambdaUpdatePublishLocal"])
+    Lib.lambdaUpdatePublishLocal(options["lambdaFunction"], options["zipFile"], resultFunc);
 
 if (options["ecrEcsEphemeralCreate"])
     Lib.ecrEcsEphemeralCreate(options["executionRoleArn"], options["taskRoleArn"], options["cpuUnits"], options["memoryUnits"], resultFunc);

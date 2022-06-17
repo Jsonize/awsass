@@ -1,6 +1,7 @@
 const AWS = require("aws-sdk");
 const Docker = require(__dirname + "/docker.js");
 const OS = require("os");
+const FS = require("fs");
 
 const nameValueArrayToObject = function (arr) {
     let result = {};
@@ -390,6 +391,12 @@ const Module = {
         Module.resilientUpdateFunctionCodePublishLambdaVersion(lambdaFunction, {
             S3Bucket: s3Bucket,
             S3Key: s3Key
+        }, callback);
+    },
+
+    lambdaUpdatePublishLocal: function (lambdaFunction, fileName, callback) {
+        Module.resilientUpdateFunctionCodePublishLambdaVersion(lambdaFunction, {
+            ZipFile: FS.readFileSync(fileName)
         }, callback);
     },
 
