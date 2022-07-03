@@ -511,6 +511,16 @@ const Module = {
                                     return;
                                 }
                                 let smallestVersionId = resourcesResponse.items.find(item => item.path === smallestVersion.proxyKey);
+                                let parent = undefined;
+                                let childCount = 0;
+                                resourcesResponse.items.forEach(item => {
+                                    if (item.id === smallestVersionId.parentId)
+                                        parent = item;
+                                    if (item.parentId === smallestVersionId.parentId)
+                                        childCount++;
+                                });
+                                if (parent && childCount === 1)
+                                    smallestVersionId = parent;
                                 if (smallestVersionId) {
                                     console.log("Removing smallest version", smallestVersion, smallestVersionId);
                                     apigateway.deleteResource({
