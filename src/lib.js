@@ -511,6 +511,12 @@ const Module = {
                                     return;
                                 }
                                 let smallestVersionId = resourcesResponse.items.find(item => item.path === smallestVersion.proxyKey);
+                                if (!smallestVersionId) {
+                                    console.log("Couldn't find smallest version id", smallestVersionId);
+                                    console.log(resourcesResponse.items);
+                                    callback(undefined, result);
+                                    return;
+                                }
                                 let parent = undefined;
                                 let childCount = 0;
                                 resourcesResponse.items.forEach(item => {
