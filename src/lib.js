@@ -477,86 +477,69 @@ const Module = {
                     callback(err);
                     return;
                 }
-                apigateway.createDeployment({
-                    restApiId: restApiId,
-                    stageName: stageName
-                }, function (err, result) {
-                    if (err) {
-                        callback(err);
-                        return;
-                    }
-                    if (removeSmallestVersion) {
-                        const swaggerBase = JSON.parse(exportResponse.body);
-                        const subIntegration = swaggerBase.paths[apiGatewayBasePath]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"];
-                        let smallestVersion = null;
-                        const subIntegrationBase = (subIntegration.uri.split("/invocations"))[0];
-                        for (let proxyKey in swaggerBase.paths) {
-                            const lambdaUri = swaggerBase.paths[proxyKey]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"].uri;
-                            if (lambdaUri.indexOf(subIntegrationBase) === 0) {
-                                const lambdaVersion = parseInt(lambdaUri.substring(subIntegrationBase.length + 1), 10);
-                                if (!isNaN(lambdaVersion)) {
-                                    if (!smallestVersion || smallestVersion.version > lambdaVersion) {
-                                        smallestVersion = {
-                                            proxyKey: proxyKey,
-                                            version: lambdaVersion
-                                        };
-                                    }
+                if (removeSmallestVersion) {
+                    const swaggerBase = JSON.parse(exportResponse.body);
+                    const subIntegration = swaggerBase.paths[apiGatewayBasePath]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"];
+                    let smallestVersion = null;
+                    const subIntegrationBase = (subIntegration.uri.split("/invocations"))[0];
+                    for (let proxyKey in swaggerBase.paths) {
+                        const lambdaUri = swaggerBase.paths[proxyKey]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"].uri;
+                        if (lambdaUri.indexOf(subIntegrationBase) === 0) {
+                            const lambdaVersion = parseInt(lambdaUri.substring(subIntegrationBase.length + 1), 10);
+                            if (!isNaN(lambdaVersion)) {
+                                if (!smallestVersion || smallestVersion.version > lambdaVersion) {
+                                    smallestVersion = {
+                                        proxyKey: proxyKey,
+                                        version: lambdaVersion
+                                    };
                                 }
                             }
                         }
-                        if (smallestVersion) {
-                            apigateway.getResources({
-                                restApiId: restApiId,
-                                limit: 500
-                            }, function (err, resourcesResponse) {
-                                if (err !== null) {
-                                    callback(err);
-                                    return;
-                                }
-                                let smallestVersionId = resourcesResponse.items.find(item => item.path === smallestVersion.proxyKey);
-                                if (!smallestVersionId) {
-                                    console.log("Couldn't find smallest version id", smallestVersionId);
-                                    console.log(resourcesResponse.items);
-                                    callback(undefined, result);
-                                    return;
-                                }
-                                let parent = undefined;
-                                let childCount = 0;
-                                resourcesResponse.items.forEach(item => {
-                                    if (item.id === smallestVersionId.parentId)
-                                        parent = item;
-                                    if (item.parentId === smallestVersionId.parentId)
-                                        childCount++;
-                                });
-                                if (parent && childCount === 1)
-                                    smallestVersionId = parent;
-                                if (smallestVersionId) {
-                                    console.log("Removing smallest version", smallestVersion, smallestVersionId);
-                                    apigateway.deleteResource({
-                                        restApiId: restApiId,
-                                        resourceId: smallestVersionId.id
-                                    }, function (err) {
-                                        if (err !== null) {
-                                            callback(err);
-                                            return;
-                                        }
-                                        apigateway.createDeployment({
-                                            restApiId: restApiId,
-                                            stageName: stageName
-                                        }, function (err, result) {
-                                            if (err !== null) {
-                                                callback(err);
-                                                return;
-                                            }
-                                            callback(undefined, result);
-                                        });
-                                    });
-                                }
+                    }
+                    if (smallestVersion) {
+                        apigateway.getResources({
+                            restApiId: restApiId,
+                            limit: 500
+                        }, function (err, resourcesResponse) {
+                            if (err !== null) {
+                                callback(err);
+                                return;
+                            }
+                            let smallestVersionId = resourcesResponse.items.find(item => item.path === smallestVersion.proxyKey);
+                            if (!smallestVersionId) {
+                                console.log("Couldn't find smallest version id", smallestVersionId);
+                                console.log(resourcesResponse.items);
+                                callback("Couldn't find smallest version id");
+                                return;
+                            }
+                            let parent = undefined;
+                            let childCount = 0;
+                            resourcesResponse.items.forEach(item => {
+                                if (item.id === smallestVersionId.parentId)
+                                    parent = item;
+                                if (item.parentId === smallestVersionId.parentId)
+                                    childCount++;
                             });
-                        }
+                            if (parent && childCount === 1)
+                                smallestVersionId = parent;
+                            if (smallestVersionId) {
+                                console.log("Removing smallest version", smallestVersion, smallestVersionId);
+                                apigateway.deleteResource({
+                                    restApiId: restApiId,
+                                    resourceId: smallestVersionId.id
+                                }, function (err) {
+                                    if (err !== null) {
+                                        callback(err);
+                                        return;
+                                    }
+                                    apigateway.createDeployment({ restApiId: restApiId, stageName: stageName }, callback);
+                                });
+                            }
+                        });
                     } else
-                        callback(undefined, result);
-                });
+                        apigateway.createDeployment({ restApiId: restApiId, stageName: stageName }, callback);
+                } else
+                    apigateway.createDeployment({ restApiId: restApiId, stageName: stageName }, callback);
             });
         });
     },
