@@ -540,7 +540,16 @@ const Module = {
                                             callback(err);
                                             return;
                                         }
-                                        callback(undefined, result);
+                                        apigateway.createDeployment({
+                                            restApiId: restApiId,
+                                            stageName: stageName
+                                        }, function (err, result) {
+                                            if (err !== null) {
+                                                callback(err);
+                                                return;
+                                            }
+                                            callback(undefined, result);
+                                        });
                                     });
                                 }
                             });
