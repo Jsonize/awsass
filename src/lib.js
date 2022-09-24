@@ -507,9 +507,10 @@ const Module = {
                             }
                             let smallestVersionId = resourcesResponse.items.find(item => item.path === smallestVersion.proxyKey);
                             if (!smallestVersionId) {
-                                console.log("Couldn't find smallest version id", smallestVersionId);
+                                console.log("Couldn't find smallest version id, ignoring", smallestVersionId);
                                 console.log(resourcesResponse.items);
-                                callback("Couldn't find smallest version id");
+                                //callback("Couldn't find smallest version id");
+                                apigateway.createDeployment({ restApiId: restApiId, stageName: stageName }, callback);
                                 return;
                             }
                             let parent = undefined;
