@@ -358,28 +358,18 @@ const Module = {
         const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
         const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
         const cloudwatchlogs = new AWS.CloudWatchLogs({apiVersion: '2014-03-28'});
-        cloudwatchlogs.deleteLogGroup({
-            logGroupName: "/ecs/" + ephemeralId
-        }, function (err, logGroupResult) {
-            if (err) {
-                callback(err);
-                return;
-            }
-            ecs.deregisterTaskDefinition({
-                taskDefinition: ephemeralId + ":1"
-            }, function (err, deregisterTaskDef) {
+        const f = function () {
+            ecr.deleteRepository({
+                repositoryName: ephemeralId,
+                force: true
+            }, function (err, deleteRepoResult) {
                 if (err) {
                     callback(err);
                     return;
                 }
-                ecr.deleteRepository({
-                    repositoryName: ephemeralId,
-                    force: true
-                }, function (err, deleteRepoResult) {
-                    if (err) {
-                        callback(err);
-                        return;
-                    }
+                cloudwatchlogs.deleteLogGroup({
+                    logGroupName: "/ecs/" + ephemeralId
+                }, function (err, logGroupResult) {
                     callback(undefined, {
                         ephemeralId: ephemeralId,
                         repositoryUri: deleteRepoResult.repository.repositoryUri,
@@ -387,6 +377,30 @@ const Module = {
                     });
                 });
             });
+        };
+        ecs.listTaskDefinitions({
+            familyPrefix: ephemeralId
+        }, function (err, deregisterTaskDefs) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            let allCount = 0;
+            let counter = 0;
+            deregisterTaskDefs.taskDefinitionArns.forEach(arn => {
+                if (arn.indexOf(ephemeralId) >= 0) {
+                    allCount++;
+                    ecs.deregisterTaskDefinition({
+                        taskDefinition: arn
+                    }, function () {
+                        counter++;
+                        if (counter === allCount)
+                            f();
+                    });
+                }
+            });
+            if (allCount === 0)
+                f();
         });
     },
 
