@@ -38,7 +38,7 @@ AWSASS is an assistant to AWS, mostly for running better scripts.
 ```
 
 ```bash
-  awsass --ecr-ecs-ephemeral-destory --profile XXX --region XXX \
+  awsass --ecr-ecs-ephemeral-destroy --profile XXX --region XXX \
          --ephemeral-id XXX
 ```
 

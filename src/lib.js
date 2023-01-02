@@ -372,8 +372,7 @@ const Module = {
                 }, function (err, logGroupResult) {
                     callback(undefined, {
                         ephemeralId: ephemeralId,
-                        repositoryUri: deleteRepoResult.repository.repositoryUri,
-                        taskDefinitionArn: deregisterTaskDef.taskDefinition.taskDefinitionArn
+                        repositoryUri: deleteRepoResult.repository.repositoryUri
                     });
                 });
             });
