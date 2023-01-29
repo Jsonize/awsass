@@ -49,6 +49,76 @@ const Module = {
         });
     },
 
+    ecrEcsSetRevision: function (taskDefinition, containerName, revisionString, callback) {
+        let findImageIndex = function (images, searchString) {
+            return images.findIndex(function (image) {
+                return image.imageDigest === searchString || image.imageTags && image.imageTags.includes(searchString)
+            });
+        };
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
+        ecs.describeTaskDefinition({taskDefinition: taskDefinition}, function (err, describeTaskDefinition) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            const containerDefinitions = describeTaskDefinition.taskDefinition.containerDefinitions;
+            let containerDefinition = containerName ? containerDefinitions.find(containerDefinition => containerDefinition.name === containerName) : containerDefinitions[0];
+            if (!containerDefinition) {
+                callback(`Could not find container definition.`);
+                return;
+            }
+            containerName = containerName || containerDefinition.name;
+            let splt = containerDefinition.image.split(containerDefinition.image.indexOf("@") < 0 ? ":" : "@");
+            const imageName = splt[0];
+            const imageRevision = splt[1];
+            splt = imageName.split("/");
+            const repositoryBase = splt[0];
+            const repositoryName = splt[1];
+            ecr.describeImages({repositoryName: repositoryName}, function (err, describeImages) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                const images = describeImages.imageDetails.sort(function (x, y) {
+                    return x.imagePushedAt > y.imagePushedAt ? 1 : (x.imagePushedAt < y.imagePushedAt ? -1 : 0);
+                });
+                const oldImageIndex = findImageIndex(images, imageRevision);
+                if (oldImageIndex < 0) {
+                    callback(`Could not find current image.`);
+                    return;
+                }                
+                revisionString = revisionString || "latest";
+                let newImageIndex = -1;
+                switch (revisionString) {
+                    case "-1": 
+                        newImageIndex = oldImageIndex - 1;
+                        break;
+                    case "+1":
+                        newImageIndex = oldImageIndex + 1;
+                        break;
+                    case "latest":
+                        newImageIndex = images.length - 1;
+                        break;
+                    case "first":
+                        newImageIndex = 0;
+                        break;
+                    default:
+                        newImageIndex = findImageIndex(images, revisionString);
+                        break;
+                }
+                if (newImageIndex < 0 || newImageIndex >= images.length) {
+                    callback(`Could not find new image.`);
+                    return;
+                }
+                const newImage = images[newImageIndex];
+                const newImageRevision = newImage.imageTags && newImage.imageTags.length > 0 ? newImage.imageTags[0] : newImage.imageDigest;
+                const newUrl = repositoryBase + "/" + repositoryName + (newImageRevision.indexOf(":") < 0 ? ":" : "@") + newImageRevision;
+                Module.ecsCreateNewRevisionForContainer(taskDefinition, containerName, newUrl, callback);
+            });
+        });
+    },
+
     ecrLoginDetails: function (callback) {
         const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
         ecr.getAuthorizationToken({}, function (err, getAuthorizationToken) {

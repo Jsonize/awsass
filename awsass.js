@@ -9,6 +9,7 @@ program
     .option("--ecr-login", "login to ecr")
     .option("--ecr-tag-push", "tag and push to ecr")
     .option("--ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision")
+    .option("--ecr-ecs-set-revision", "sets revision for a task")
     .option("--ecs-run-on-fargate", "run ecs task on fargate")
     .option("--ecs-task-logs", "read task logs")
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
@@ -43,7 +44,8 @@ program
     .option("--stage-name <stage-name>", "api gateway stage-name", "production")
     .option("--api-gateway-base-path <base path>", "api gateway base path", "/{proxy+}")
     .option("--api-gateway-sub-path <sub path>", "api gateway sub path")
-    .option("--ephemeral-id <ephemeral-id>", "ephemeral id");
+    .option("--ephemeral-id <ephemeral-id>", "ephemeral id")
+    .option("--revision-string <revision-string>", "revision-string");
 
 // TODO: deploy lambda function directly without s3
 // TODO: deploy lambda@edge function
@@ -73,6 +75,9 @@ if (options["ecrTagPush"])
 
 if (options["ecrEcsPushNewRevision"])
     Lib.ecrEcsPushNewRevision(options["taskDefinition"], options["containerName"], options["localImageName"], options["imageName"], resultFunc);
+
+if (options["ecrEcsSetRevision"])
+    Lib.ecrEcsSetRevision(options["taskDefinition"], options["containerName"], options["revisionString"], resultFunc);
 
 if (options["ecsRunOnFargate"])
     Lib.ecsRunOnFargate(options["taskDefinition"], options["clusterName"], options["environmentVariable"], resultFunc);
