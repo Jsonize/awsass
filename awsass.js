@@ -10,6 +10,7 @@ program
     .option("--ecr-tag-push", "tag and push to ecr")
     .option("--ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision")
     .option("--ecr-ecs-set-revision", "sets revision for a task")
+    .option("--scheduled-lambda-set-revision", "sets revision for a scheduled lambda function")
     .option("--ecs-run-on-fargate", "run ecs task on fargate")
     .option("--ecs-task-logs", "read task logs")
     .option("--edge-lambda-kill-warm-instances", "kill warm edge lambda instances by doing a silent redeployment")
@@ -34,6 +35,7 @@ program
     .option("--lambda-function-version <lambda-function-version>", "lambda function version")
     .option("--lambda-edge-type <lambda-edge-type>", "lambda edge type")
     .option("--cloudfront-id <cloudfront-id>", "cloudfront id")
+    .option("--cloudwatch-rule <cloudwatch-rule>", "cloudwatch rule")
     .option("--environment-variable <keyvalue...>", "overwrite environment variable key:value")
     .option("--execution-role-arn <execution-role-arn>", "execution-role-arn")
     .option("--task-role-arn <task-role-arn>", "task-role-arn")
@@ -96,6 +98,9 @@ if (options["lambdaUpdatePublishS3"])
 
 if (options["lambdaUpdatePublishLocal"])
     Lib.lambdaUpdatePublishLocal(options["lambdaFunction"], options["zipFile"], resultFunc);
+
+if (options["scheduledLambdaSetRevision"])
+    Lib.scheduledLambdaSetRevision(options["cloudwatchRule"], options["revisionString"], resultFunc);
 
 if (options["ecrEcsEphemeralCreate"])
     Lib.ecrEcsEphemeralCreate(options["executionRoleArn"], options["taskRoleArn"], options["cpuUnits"], options["memoryUnits"], resultFunc);

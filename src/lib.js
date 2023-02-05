@@ -90,13 +90,7 @@ const Module = {
                 }                
                 revisionString = revisionString || "latest";
                 let newImageIndex = -1;
-                switch (revisionString) {
-                    case "-1": 
-                        newImageIndex = oldImageIndex - 1;
-                        break;
-                    case "+1":
-                        newImageIndex = oldImageIndex + 1;
-                        break;
+                switch (revisionString) {                    
                     case "latest":
                         newImageIndex = images.length - 1;
                         break;
@@ -104,7 +98,10 @@ const Module = {
                         newImageIndex = 0;
                         break;
                     default:
-                        newImageIndex = findImageIndex(images, revisionString);
+                        if (isNaN(revisionString))
+                            newImageIndex = findImageIndex(images, revisionString);
+                        else
+                            newImageIndex = oldImageIndex + parseInt(revisionString);
                         break;
                 }
                 if (newImageIndex < 0 || newImageIndex >= images.length) {
@@ -115,6 +112,60 @@ const Module = {
                 const newImageRevision = newImage.imageTags && newImage.imageTags.length > 0 ? newImage.imageTags[0] : newImage.imageDigest;
                 const newUrl = repositoryBase + "/" + repositoryName + (newImageRevision.indexOf(":") < 0 ? ":" : "@") + newImageRevision;
                 Module.ecsCreateNewRevisionForContainer(taskDefinition, containerName, newUrl, callback);
+            });
+        });
+    },
+
+    scheduledLambdaSetRevision: function (cloudwatchRule, revisionString, callback) {
+        const events = new AWS.CloudWatchEvents({apiVersion: '2015-10-07'});
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        events.listTargetsByRule({Rule: cloudwatchRule}, function (err, listTargetsByRule) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            let target = listTargetsByRule.Targets.find(target => target.Arn.indexOf('arn:aws:lambda') === 0);
+            if (!target) {
+                callback("Cannot find lambda target");
+                return;
+            }
+            let arn = target.Arn;            
+            let splt = arn.split(":");
+            let oldVersion = splt[7];
+            if (splt.length > 7) {
+                splt.pop();
+                arn = splt.join(":");
+            }
+            lambda.listVersionsByFunction({FunctionName: arn, MaxItems: 10000}, function (err, listVersionsByFunction) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                if (!oldVersion)
+                    oldVersion = listVersionsByFunction.Versions[listVersionsByFunction.Versions.length - 1].Version;
+                let newVersion = undefined;
+                switch (revisionString) {                    
+                    case "latest":
+                        newVersion = listVersionsByFunction.Versions[listVersionsByFunction.Versions.length - 1].Version;
+                        break;
+                    case "first":
+                        newVersion = listVersionsByFunction.Versions[0].Version;
+                        break;
+                    default:
+                        if (revisionString.indexOf("+") === 0 || revisionString.indexOf("-") === 0)
+                            newVersion = (parseInt(oldVersion) + parseInt(revisionString)) + ""
+                        else
+                            newVersion = revisionString;
+                        break;
+                }
+                if (listVersionsByFunction.Versions.findIndex(v => v.Version === newVersion) < 0) {
+                    callback(`Could not find new version.`);
+                    return;
+                }
+                if (newVersion !== listVersionsByFunction.Versions[listVersionsByFunction.Versions.length - 1].Version)
+                    arn += ":" + newVersion;
+                target.Arn = arn;
+                events.putTargets({Rule: cloudwatchRule, Targets: [target]}, callback);
             });
         });
     },
