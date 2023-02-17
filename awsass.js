@@ -10,6 +10,7 @@ program
     .option("--ecr-tag-push", "tag and push to ecr")
     .option("--ecr-ecs-push-new-revision", "tags image, pushes, and creates a new revision")
     .option("--ecr-ecs-set-revision", "sets revision for a task")
+    .option("--ecs-list-revision", "lists all ecs revisions")
     .option("--scheduled-lambda-set-revision", "sets revision for a scheduled lambda function")
     .option("--ecs-run-on-fargate", "run ecs task on fargate")
     .option("--ecs-task-logs", "read task logs")
@@ -80,6 +81,9 @@ if (options["ecrEcsPushNewRevision"])
 
 if (options["ecrEcsSetRevision"])
     Lib.ecrEcsSetRevision(options["taskDefinition"], options["containerName"], options["revisionString"], resultFunc);
+
+if (options["ecsListRevision"])
+    Lib.ecsListRevision(resultFunc);
 
 if (options["ecsRunOnFargate"])
     Lib.ecsRunOnFargate(options["taskDefinition"], options["clusterName"], options["environmentVariable"], resultFunc);

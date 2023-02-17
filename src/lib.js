@@ -49,6 +49,41 @@ const Module = {
         });
     },
 
+    ecsListRevision: function (callback) {
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        ecs.listTaskDefinitions(function (err, listTaskDefinitions) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            let map = {};
+            listTaskDefinitions.taskDefinitionArns.forEach(arn => {
+                let spl = arn.split(":");
+                let value = parseInt(spl.pop(), 10);
+                let key = spl.join(":");
+                map[key] = Math.max(map[key] || value, value);
+            });
+            let arns = [];
+            let result = [];
+            let iter = function (idx) {
+                if (idx >= arns.length)
+                    callback(undefined, result);
+                ecs.describeTaskDefinition({taskDefinition: arns[idx]}, function (err, describeTaskDefinition) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    result.push(describeTaskDefinition.taskDefinition.containerDefinitions[0].image);
+                    iter(idx+1);
+                });
+            }
+            for (let key in map)
+                arns.push(key + ":" + map[key]);
+            iter(0);
+        });
+    },
+
+
     ecrEcsSetRevision: function (taskDefinition, containerName, revisionString, callback) {
         let findImageIndex = function (images, searchString) {
             return images.findIndex(function (image) {
