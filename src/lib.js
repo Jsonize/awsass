@@ -83,6 +83,55 @@ const Module = {
         });
     },
 
+    nextTokenHelper: function (obj, func, opts, callback, acc) {
+        func.call(obj, opts, function (err, data) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            if (acc) {
+                for (var key in data) {
+                    if (key in acc) {
+                        if (acc[key].concat)
+                            acc[key] = acc[key].concat(data[key]);
+                    } else
+                        acc.key = data[key];
+                }
+            } else
+                acc = data;
+            if (data.NextToken) {
+                opts.NextToken = data.NextToken;
+                Module.nextTokenHelper(obj, func, opts, callback, acc);
+            } else
+                callback(undefined, acc);
+        });
+    },
+
+    scheduledLambdaListRevision: function (callback) {
+        const events = new AWS.CloudWatchEvents({apiVersion: '2015-10-07'});
+        Module.nextTokenHelper(events, events.listRules, {Limit:100}, function (err, listRules) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            let result = [];
+            let iter = function (idx) {
+                if (idx >= listRules.Rules.length)
+                    callback(undefined, result);
+                events.listTargetsByRule({Rule: listRules.Rules[idx].Name}, function (err, listTargetsByRule) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    let target = listTargetsByRule.Targets.find(target => target.Arn.indexOf('arn:aws:lambda') === 0);
+                    if (target)
+                        result.push(target.Arn);
+                    iter(idx+1);
+                });
+            }
+            iter(0);
+        });
+    },
 
     ecrEcsSetRevision: function (taskDefinition, containerName, revisionString, callback) {
         let findImageIndex = function (images, searchString) {
