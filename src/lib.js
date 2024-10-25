@@ -51,7 +51,25 @@ const Module = {
 
     ecsListRevision: function (callback) {
         const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
-        ecs.listTaskDefinitions(function (err, listTaskDefinitions) {
+        let iterDefs = function (nextToken, cb) {
+            ecs.listTaskDefinitions({nextToken: nextToken}, function (err, listTaskDefinitions) {
+                if (err) {
+                    cb(err);
+                    return;
+                }
+                if (listTaskDefinitions.nextToken)
+                    iterDefs(listTaskDefinitions.nextToken, function (err, nextListTaskDefinitions) {
+                        if (err) {
+                            cb(err);
+                            return;
+                        }
+                        cb(undefined, {taskDefinitionArns: listTaskDefinitions.taskDefinitionArns.concat(nextListTaskDefinitions.taskDefinitionArns)});
+                    });
+                else
+                    cb(undefined, listTaskDefinitions);
+            });
+        };
+        iterDefs(undefined, function (err, listTaskDefinitions) {
             if (err) {
                 callback(err);
                 return;

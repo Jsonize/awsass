@@ -64,7 +64,7 @@ if (options.profile)
     AWS.config.update({credentials: new AWS.SharedIniFileCredentials({profile: options.profile})});
 
 const resultFunc = function (err, data) {
-    console.log(err ? err : data);
+    console.dir(err ? err : data, {'maxArrayLength': null});
     process.exit(err ? 1 : 0);
 };
 
