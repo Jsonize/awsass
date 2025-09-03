@@ -719,17 +719,21 @@ const Module = {
                     let smallestVersion = null;
                     const subIntegrationBase = (subIntegration.uri.split("/invocations"))[0];
                     for (let proxyKey in swaggerBase.paths) {
-                        const lambdaUri = swaggerBase.paths[proxyKey]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"].uri;
-                        if (lambdaUri.indexOf(subIntegrationBase) === 0) {
-                            const lambdaVersion = parseInt(lambdaUri.substring(subIntegrationBase.length + 1), 10);
-                            if (!isNaN(lambdaVersion)) {
-                                if (!smallestVersion || smallestVersion.version > lambdaVersion) {
-                                    smallestVersion = {
-                                        proxyKey: proxyKey,
-                                        version: lambdaVersion
-                                    };
+                        try {
+                            const lambdaUri = swaggerBase.paths[proxyKey]["x-amazon-apigateway-any-method"]["x-amazon-apigateway-integration"].uri;
+                            if (lambdaUri.indexOf(subIntegrationBase) === 0) {
+                                const lambdaVersion = parseInt(lambdaUri.substring(subIntegrationBase.length + 1), 10);
+                                if (!isNaN(lambdaVersion)) {
+                                    if (!smallestVersion || smallestVersion.version > lambdaVersion) {
+                                        smallestVersion = {
+                                            proxyKey: proxyKey,
+                                            version: lambdaVersion
+                                        };
+                                    }
                                 }
                             }
+                        } catch (e) {
+                            console.error("Error processing proxyKey:", proxyKey, e);
                         }
                     }
                     if (smallestVersion) {
