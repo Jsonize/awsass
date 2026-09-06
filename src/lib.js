@@ -334,16 +334,30 @@ const Module = {
 
     ec2GetSubnets: function (callback) {
         const ec2 = new AWS.EC2({apiVersion: '2016-11-15'});
-        ec2.describeSubnets({}, function (err, subnetsDescription) {
-            if (err) {
-                callback(err);
-                return;
-            }
-            let subnets = subnetsDescription.Subnets.filter(subnet => subnet.DefaultForAz);
-            if (subnets.length === 0)
-                subnets = subnetsDescription.Subnets;
-            callback(undefined, subnets.map(subnet => subnet.SubnetId));
-        });
+        let allSubnets = [];
+        function getNextPage(nextToken) {
+            const params = {
+                MaxResults: 5
+            };
+            if (nextToken)
+                params.NextToken = nextToken;
+            ec2.describeSubnets(params, function (err, subnetsDescription) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                allSubnets = allSubnets.concat(subnetsDescription.Subnets);
+                if (subnetsDescription.NextToken) {
+                    getNextPage(subnetsDescription.NextToken);
+                    return;
+                }
+                let subnets = allSubnets.filter(subnet => subnet.DefaultForAz);
+                if (subnets.length === 0)
+                    subnets = allSubnets;
+                callback(undefined, subnets.map(subnet => subnet.SubnetId));
+            });
+        }
+        getNextPage();
     },
 
     ecsRunOnFargate: function (taskDefinition, clusterName, environmentVariables, callback) {
