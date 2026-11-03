@@ -5,20 +5,40 @@
     "author": "Jsonize",
     "repository": "https://github.com/jsonize/awsass",
     "license": "Apache-2.0",
+    "type": "module",
     "engines": {
-        "node": ""
+        "node": ">=22.12.0"
     },
     "bin": {
-        "awsass": "bin/awsass"
+        "awsass": "dist/awsass.js"
     },
     "preferGlobal": true,
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json",
+        "typecheck": "tsc --noEmit",
+        "test": "node --test \"src/**/*.test.ts\"",
+        "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    },
     "dependencies": {
-        "aws-sdk": "",
-        "commander": "^8.3.0"
+        "@aws-sdk/client-api-gateway": "^3.1161.0",
+        "@aws-sdk/client-cloudfront": "^3.1161.0",
+        "@aws-sdk/client-cloudwatch-logs": "^3.1161.0",
+        "@aws-sdk/client-ec2": "^3.1161.0",
+        "@aws-sdk/client-ecr": "^3.1161.0",
+        "@aws-sdk/client-ecs": "^3.1161.0",
+        "@aws-sdk/client-eventbridge": "^3.1161.0",
+        "@aws-sdk/client-lambda": "^3.1161.0",
+        "@aws-sdk/client-scheduler": "^3.1161.0",
+        "@aws-sdk/client-sts": "^3.1161.0",
+        "commander": "^15.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.20.5",
+        "aws-sdk-client-mock": "^4.1.0",
+        "typescript": "^7.0.2"
     },
     "files": [
-        "awsass.js",
-        "bin",
-        "src"
+        "dist",
+        "!dist/**/*.test.*"
     ]
 }

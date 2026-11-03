@@ -13,8 +13,8 @@ npm install awsass -g
 ```
 
 Requirements:
-- Node.js
-- AWS credentials, e.g. a profile in `~/.aws/credentials` or `~/.aws/config`
+- Node.js 22.12 or newer
+- AWS credentials, e.g. a profile in `~/.aws/credentials` or `~/.aws/config` (SSO profiles work too)
 - Docker, for the commands that push images (`--ecr-login`, `--ecr-tag-push`, `--ecr-ecs-push-new-revision`)
 
 
@@ -27,10 +27,11 @@ awsass --<command> [--profile <profile>] [--region <region>] [options]
 | Option | Description |
 |---|---|
 | `-p, --profile <profile>` | AWS profile to use. Defaults to the usual AWS credential chain. |
-| `-r, --region <region>` | AWS region to use. |
+| `-r, --region <region>` | AWS region to use. Defaults to the profile's region. |
 
-Each invocation runs one command. The result is printed as a JavaScript object and the
-exit code is `0` on success and `1` on error, so commands can be chained in scripts.
+Each invocation runs exactly one command. The result is printed as a JavaScript object and the
+exit code is `0` on success and `1` on error (with the error on stderr), so commands can be
+chained in scripts. Missing required options are reported before anything is changed.
 
 Run `awsass --help` for the full list of options.
 
@@ -283,8 +284,8 @@ contain colons; only the first colon separates key and value.
 
 ### `--ecs-task-logs`
 
-Prints the last 100 log lines of a task. Expects the `awslogs` setup that ephemerals use
-(log group `/ecs/<container>`, stream prefix `ecs`).
+Prints the last 100 log lines of a task's first container. The container must log with the
+`awslogs` driver, as ephemerals do.
 
 ```bash
 awsass --ecs-task-logs --profile XXX --region XXX \
@@ -421,6 +422,22 @@ awsass --api-gateway-add-lambda-permission --profile XXX --region XXX \
        --rest-api-id <apiId> --api-gateway-sub-path /v42/* \
        --lambda-function <function> [--lambda-function-version 42]
 ```
+
+
+## Development
+
+awsass is written in TypeScript on the AWS SDK for JavaScript v3. Sources and tests live in `src/`.
+Running the tests needs Node.js 22.18 or newer, which runs TypeScript directly.
+
+```bash
+npm install
+npm test            # unit tests against mocked AWS clients (aws-sdk-client-mock)
+npm run typecheck   # type-check sources and tests
+npm run build       # compile to dist/, which is what gets published
+node dist/awsass.js --help
+```
+
+`npm publish` runs type check, tests and build first.
 
 
 ## License
