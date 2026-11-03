@@ -5,8 +5,17 @@ const FS = require("fs");
 
 const nameValueArrayToObject = function (arr) {
     let result = {};
-    arr.forEach(nv => result[nv.name] = nv.value);
+    (arr || []).forEach(nv => result[nv.name] = nv.value);
     return result;
+};
+
+const EPHEMERAL_PREFIX = "awsass-ephemeral-";
+const EPHEMERAL_EXPIRES_AT_TAG = "awsass:expires-at";
+const EPHEMERAL_DEFAULT_TTL_HOURS = 72;
+const SCHEDULE_NAME_PREFIX = "awsass-run-";
+
+const ephemeralCreatedAt = function (ephemeralId) {
+    return new Date(parseInt(ephemeralId.split("-").pop(), 10));
 };
 
 const objectToNameValueArray = function (obj) {
@@ -360,7 +369,7 @@ const Module = {
         getNextPage();
     },
 
-    ecsRunOnFargate: function (taskDefinition, clusterName, environmentVariables, callback) {
+    ecsFargateRunTaskParams: function (taskDefinition, clusterName, environmentVariables, callback) {
         const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
         ecs.describeTaskDefinition({taskDefinition: taskDefinition}, function (err, describeTaskDefinition) {
             if (err) {
@@ -384,7 +393,7 @@ const Module = {
                     callback(err);
                     return;
                 }
-                ecs.runTask({
+                callback(undefined, {
                     taskDefinition: taskDefinition,
                     cluster: clusterName,
                     launchType: "FARGATE",
@@ -397,9 +406,154 @@ const Module = {
                     overrides: containerOverrides ? {
                         containerOverrides: containerOverrides
                     } : undefined
-                }, callback);
+                }, describeTaskDefinition.taskDefinition);
             });
         });
+    },
+
+    ecsRunOnFargate: function (taskDefinition, clusterName, environmentVariables, callback) {
+        const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
+        Module.ecsFargateRunTaskParams(taskDefinition, clusterName, environmentVariables, function (err, runTaskParams) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            ecs.runTask(runTaskParams, callback);
+        });
+    },
+
+    ecsScheduleOnFargate: function (taskDefinition, clusterName, environmentVariables, at, schedulerRoleArn, callback) {
+        const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
+        const scheduler = new AWS.Scheduler({apiVersion: '2021-06-30'});
+        const runAt = new Date(at);
+        if (isNaN(runAt.getTime())) {
+            callback(`Invalid time ${at}.`);
+            return;
+        }
+        if (runAt.getTime() <= (new Date()).getTime()) {
+            callback(`Time ${runAt.toISOString()} is in the past.`);
+            return;
+        }
+        if (!schedulerRoleArn) {
+            callback("Missing scheduler role arn.");
+            return;
+        }
+        Module.ecsFargateRunTaskParams(taskDefinition, clusterName, environmentVariables, function (err, runTaskParams, taskDef) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            const schedule = function (groupName, warning) {
+                const scheduleName = SCHEDULE_NAME_PREFIX + (new Date()).getTime();
+                scheduler.createSchedule({
+                    Name: scheduleName,
+                    GroupName: groupName,
+                    ScheduleExpression: "at(" + runAt.toISOString().substring(0, 19) + ")",
+                    ScheduleExpressionTimezone: "UTC",
+                    FlexibleTimeWindow: {Mode: "OFF"},
+                    ActionAfterCompletion: "DELETE",
+                    Target: {
+                        Arn: "arn:aws:scheduler:::aws-sdk:ecs:runTask",
+                        RoleArn: schedulerRoleArn,
+                        Input: JSON.stringify(runTaskParams),
+                        RetryPolicy: {
+                            MaximumRetryAttempts: 3,
+                            MaximumEventAgeInSeconds: 3600
+                        }
+                    }
+                }, function (err, createScheduleResult) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    callback(undefined, {
+                        scheduleName: scheduleName,
+                        scheduleGroup: groupName,
+                        scheduleArn: createScheduleResult.ScheduleArn,
+                        runAt: runAt.toISOString(),
+                        warning: warning
+                    });
+                });
+            };
+            if (taskDef.family.indexOf(EPHEMERAL_PREFIX) !== 0) {
+                schedule("default");
+                return;
+            }
+            const ephemeralId = taskDef.family;
+            Module.ecrEphemeralExpiresAt(ephemeralId, function (err, expiresAt) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                if (runAt.getTime() > expiresAt.getTime()) {
+                    callback(`Ephemeral ${ephemeralId} expires at ${expiresAt.toISOString()}, before ${runAt.toISOString()}. Recreate it with a larger --ttl-hours.`);
+                    return;
+                }
+                ecr.describeImages({repositoryName: ephemeralId, maxResults: 1}, function (err, describeImages) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+                    const warning = describeImages.imageDetails.length === 0 ? `Repository ${ephemeralId} has no image yet; push one before ${runAt.toISOString()}.` : undefined;
+                    scheduler.createScheduleGroup({Name: ephemeralId}, function (err) {
+                        if (err && err.code !== "ConflictException") {
+                            callback(err);
+                            return;
+                        }
+                        schedule(ephemeralId, warning);
+                    });
+                });
+            });
+        });
+    },
+
+    ecsListScheduled: function (callback) {
+        const scheduler = new AWS.Scheduler({apiVersion: '2021-06-30'});
+        let schedules = [];
+        const listPage = function (nextToken) {
+            scheduler.listSchedules({NamePrefix: SCHEDULE_NAME_PREFIX, NextToken: nextToken}, function (err, listSchedules) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                schedules = schedules.concat(listSchedules.Schedules);
+                if (listSchedules.NextToken)
+                    listPage(listSchedules.NextToken);
+                else
+                    describe(0, []);
+            });
+        };
+        const describe = function (idx, result) {
+            if (idx >= schedules.length) {
+                callback(undefined, result);
+                return;
+            }
+            scheduler.getSchedule({Name: schedules[idx].Name, GroupName: schedules[idx].GroupName}, function (err, getSchedule) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                const match = /^at\((.*)\)$/.exec(getSchedule.ScheduleExpression);
+                const runAt = match ? new Date(match[1] + "Z") : undefined;
+                if (runAt && runAt.getTime() > (new Date()).getTime()) {
+                    const input = JSON.parse(getSchedule.Target.Input);
+                    result.push({
+                        scheduleName: getSchedule.Name,
+                        scheduleGroup: getSchedule.GroupName,
+                        runAt: runAt.toISOString(),
+                        taskDefinition: input.taskDefinition,
+                        cluster: input.cluster
+                    });
+                }
+                describe(idx + 1, result);
+            });
+        };
+        listPage();
+    },
+
+    ecsDeleteScheduled: function (scheduleName, scheduleGroup, callback) {
+        const scheduler = new AWS.Scheduler({apiVersion: '2021-06-30'});
+        scheduler.deleteSchedule({Name: scheduleName, GroupName: scheduleGroup || "default"}, callback);
     },
 
     ecsTaskLogs: function (taskArn, clusterName, callback) {
@@ -534,13 +688,28 @@ const Module = {
         }, callback);
     },
 
-    ecrEcsEphemeralCreate: function (executionRoleArn, taskRoleArn, cpuUnits, memoryUnits, callback) {
+    ecrEcsEphemeralCreate: function (executionRoleArn, taskRoleArn, cpuUnits, memoryUnits, ttlHours, callback) {
+        const username = OS.userInfo().username;
+        // Opportunistically clean up the user's own expired ephemerals; failures must not block creation.
+        Module.ecrEcsEphemeralCleanup(username, false, function (err, cleanupResult) {
+            Module.ecrEcsEphemeralCreateOnly(username, executionRoleArn, taskRoleArn, cpuUnits, memoryUnits, ttlHours, function (err, createResult) {
+                if (createResult)
+                    createResult.cleanedUp = cleanupResult ? cleanupResult.destroyed : [];
+                callback(err, createResult);
+            });
+        });
+    },
+
+    ecrEcsEphemeralCreateOnly: function (username, executionRoleArn, taskRoleArn, cpuUnits, memoryUnits, ttlHours, callback) {
         const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
         const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
         const cloudwatchlogs = new AWS.CloudWatchLogs({apiVersion: '2014-03-28'});
-        const ephemeralId = "awsass-ephemeral-" + OS.userInfo().username + "-" + (new Date()).getTime();
+        const createdAt = new Date();
+        const expiresAt = new Date(createdAt.getTime() + parseFloat(ttlHours || EPHEMERAL_DEFAULT_TTL_HOURS) * 60 * 60 * 1000);
+        const ephemeralId = EPHEMERAL_PREFIX + username + "-" + createdAt.getTime();
         ecr.createRepository({
-            repositoryName: ephemeralId
+            repositoryName: ephemeralId,
+            tags: [{Key: EPHEMERAL_EXPIRES_AT_TAG, Value: expiresAt.toISOString()}]
         }, function (err, createRepoResult) {
             if (err) {
                 callback(err);
@@ -584,10 +753,102 @@ const Module = {
                     callback(undefined, {
                         ephemeralId: ephemeralId,
                         repositoryUri: createRepoResult.repository.repositoryUri,
-                        taskDefinitionArn: registerTaskDef.taskDefinition.taskDefinitionArn
+                        taskDefinitionArn: registerTaskDef.taskDefinition.taskDefinitionArn,
+                        expiresAt: expiresAt.toISOString()
                     });
                 });
             });
+        });
+    },
+
+    ecrEphemeralExpiresAt: function (ephemeralId, callback) {
+        const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
+        ecr.describeRepositories({repositoryNames: [ephemeralId]}, function (err, describeRepositories) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            ecr.listTagsForResource({resourceArn: describeRepositories.repositories[0].repositoryArn}, function (err, listTags) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                const tag = (listTags.tags || []).find(tag => tag.Key === EPHEMERAL_EXPIRES_AT_TAG);
+                // Ephemerals created before expiry tagging fall back to the creation time encoded in the id.
+                callback(undefined, tag ? new Date(tag.Value) : new Date(ephemeralCreatedAt(ephemeralId).getTime() + EPHEMERAL_DEFAULT_TTL_HOURS * 60 * 60 * 1000));
+            });
+        });
+    },
+
+    ecrEcsEphemeralList: function (callback) {
+        const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
+        let ephemeralIds = [];
+        const listPage = function (nextToken) {
+            ecr.describeRepositories({nextToken: nextToken}, function (err, describeRepositories) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                describeRepositories.repositories.forEach(repository => {
+                    if (repository.repositoryName.indexOf(EPHEMERAL_PREFIX) === 0)
+                        ephemeralIds.push(repository.repositoryName);
+                });
+                if (describeRepositories.nextToken)
+                    listPage(describeRepositories.nextToken);
+                else
+                    describe(0, []);
+            });
+        };
+        const describe = function (idx, result) {
+            if (idx >= ephemeralIds.length) {
+                callback(undefined, result);
+                return;
+            }
+            Module.ecrEphemeralExpiresAt(ephemeralIds[idx], function (err, expiresAt) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                result.push({
+                    ephemeralId: ephemeralIds[idx],
+                    createdAt: ephemeralCreatedAt(ephemeralIds[idx]).toISOString(),
+                    expiresAt: expiresAt.toISOString(),
+                    expired: expiresAt.getTime() <= (new Date()).getTime()
+                });
+                describe(idx + 1, result);
+            });
+        };
+        listPage();
+    },
+
+    ecrEcsEphemeralCleanup: function (username, dryRun, callback) {
+        Module.ecrEcsEphemeralList(function (err, ephemerals) {
+            if (err) {
+                callback(err);
+                return;
+            }
+            const expired = ephemerals.filter(ephemeral => ephemeral.expired && (!username || ephemeral.ephemeralId.indexOf(EPHEMERAL_PREFIX + username + "-") === 0));
+            let result = {destroyed: [], failed: []};
+            if (dryRun) {
+                result.destroyed = expired.map(ephemeral => ephemeral.ephemeralId);
+                result.dryRun = true;
+                callback(undefined, result);
+                return;
+            }
+            const destroy = function (idx) {
+                if (idx >= expired.length) {
+                    callback(undefined, result);
+                    return;
+                }
+                Module.ecrEcsEphemeralDestroy(expired[idx].ephemeralId, function (err) {
+                    if (err)
+                        result.failed.push({ephemeralId: expired[idx].ephemeralId, error: err.message || err});
+                    else
+                        result.destroyed.push(expired[idx].ephemeralId);
+                    destroy(idx + 1);
+                });
+            };
+            destroy(0);
         });
     },
 
@@ -595,6 +856,7 @@ const Module = {
         const ecr = new AWS.ECR({apiVersion: '2015-09-21'});
         const ecs = new AWS.ECS({apiVersion: '2014-11-13'});
         const cloudwatchlogs = new AWS.CloudWatchLogs({apiVersion: '2014-03-28'});
+        const scheduler = new AWS.Scheduler({apiVersion: '2021-06-30'});
         const f = function () {
             ecr.deleteRepository({
                 repositoryName: ephemeralId,
@@ -607,9 +869,14 @@ const Module = {
                 cloudwatchlogs.deleteLogGroup({
                     logGroupName: "/ecs/" + ephemeralId
                 }, function (err, logGroupResult) {
-                    callback(undefined, {
-                        ephemeralId: ephemeralId,
-                        repositoryUri: deleteRepoResult.repository.repositoryUri
+                    // Removes pending scheduled runs; errors are ignored so destroy works without scheduler access.
+                    scheduler.deleteScheduleGroup({
+                        Name: ephemeralId
+                    }, function (err, scheduleGroupResult) {
+                        callback(undefined, {
+                            ephemeralId: ephemeralId,
+                            repositoryUri: deleteRepoResult.repository.repositoryUri
+                        });
                     });
                 });
             });

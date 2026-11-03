@@ -1,4 +1,5 @@
 const { program } = require("commander");
+require("aws-sdk/lib/maintenance_mode_message").suppress = true;
 const AWS = require("aws-sdk");
 const Lib = require(__dirname + "/src/lib.js");
 
@@ -21,6 +22,11 @@ program
     .option("--lambda-update-publish-local", "update and publish new lambda version from local file")
     .option("--ecr-ecs-ephemeral-create", "creates an ephemeral ecr/ecs combination")
     .option("--ecr-ecs-ephemeral-destroy", "destroys an ephemeral ecr/ecs combination")
+    .option("--ecr-ecs-ephemeral-list", "lists all ephemeral ecr/ecs combinations with their expiry")
+    .option("--ecr-ecs-ephemeral-cleanup", "destroys all expired ephemeral ecr/ecs combinations")
+    .option("--ecs-schedule-on-fargate", "schedule ecs task on fargate for a later time")
+    .option("--ecs-list-scheduled", "lists all pending scheduled ecs tasks")
+    .option("--ecs-delete-scheduled", "deletes a pending scheduled ecs task")
     .option("--api-gateway-lambda-deploy-sub", "deploy a sub lambda function with api gateway")
     .option("--api-gateway-deploy-lambda-proxy-sub-route", "adds a lambda proxy sub route based off default")
     .option("--api-gateway-add-lambda-permission", "add api gateway lambda permission")
@@ -49,6 +55,12 @@ program
     .option("--api-gateway-base-path <base path>", "api gateway base path", "/{proxy+}")
     .option("--api-gateway-sub-path <sub path>", "api gateway sub path")
     .option("--ephemeral-id <ephemeral-id>", "ephemeral id")
+    .option("--ttl-hours <ttl-hours>", "hours until an ephemeral expires", "72")
+    .option("--dry-run", "only list what would be done")
+    .option("--at <time>", "ISO time to run at, e.g. 2026-10-30T09:00 (local time) or 2026-10-30T08:00Z")
+    .option("--scheduler-role-arn <scheduler-role-arn>", "role assumed by eventbridge scheduler to run the task")
+    .option("--schedule-name <schedule-name>", "schedule name")
+    .option("--schedule-group <schedule-group>", "schedule group", "default")
     .option("--revision-string <revision-string>", "revision-string");
 
 // TODO: deploy lambda function directly without s3
@@ -111,10 +123,25 @@ if (options["scheduledLambdaSetRevision"])
     Lib.scheduledLambdaSetRevision(options["cloudwatchRule"], options["revisionString"], resultFunc);
 
 if (options["ecrEcsEphemeralCreate"])
-    Lib.ecrEcsEphemeralCreate(options["executionRoleArn"], options["taskRoleArn"], options["cpuUnits"], options["memoryUnits"], resultFunc);
+    Lib.ecrEcsEphemeralCreate(options["executionRoleArn"], options["taskRoleArn"], options["cpuUnits"], options["memoryUnits"], options["ttlHours"], resultFunc);
 
 if (options["ecrEcsEphemeralDestroy"])
     Lib.ecrEcsEphemeralDestroy(options["ephemeralId"], resultFunc);
+
+if (options["ecrEcsEphemeralList"])
+    Lib.ecrEcsEphemeralList(resultFunc);
+
+if (options["ecrEcsEphemeralCleanup"])
+    Lib.ecrEcsEphemeralCleanup(undefined, options["dryRun"], resultFunc);
+
+if (options["ecsScheduleOnFargate"])
+    Lib.ecsScheduleOnFargate(options["taskDefinition"], options["clusterName"], options["environmentVariable"], options["at"], options["schedulerRoleArn"], resultFunc);
+
+if (options["ecsListScheduled"])
+    Lib.ecsListScheduled(resultFunc);
+
+if (options["ecsDeleteScheduled"])
+    Lib.ecsDeleteScheduled(options["scheduleName"], options["scheduleGroup"], resultFunc);
 
 if (options["apiGatewayDeployLambdaProxySubRoute"])
     Lib.apiGatewayDeployLambdaProxySubRoute(options["restApiId"], options["stageName"], options["apiGatewayBasePath"], options["apiGatewaySubPath"], options["lambdaFunction"], options["lambdaFunctionVersion"], options["removeSmallestVersion"], resultFunc);
