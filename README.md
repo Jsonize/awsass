@@ -358,8 +358,17 @@ awsass --scheduled-lambda-set-revision --profile XXX --region XXX \
        --cloudwatch-rule <rule> --revision-string <revision>
 ```
 
-`--revision-string` is `latest`, `first`, a version number, or `+N` / `-N` relative to the
-current version.
+| `--revision-string` | Target |
+|---|---|
+| `latest` (default) | Highest published version. |
+| `first` | Lowest published version that still exists. |
+| A version number, e.g. `42` | Exactly that published version. |
+| `+N` / `-N` | N published versions forward or back from the current one, skipping deleted versions. A rule pointing at `$LATEST` counts as being on the highest published version. |
+| `$LATEST` | The unpublished code (unqualified function ARN). Quote it in the shell: `'$LATEST'`. |
+
+The rule's target is always set to a specific version, except for `$LATEST`. EventBridge needs
+permission to invoke that version (`lambda:AddPermission` with principal `events.amazonaws.com`
+on the version), otherwise the rule's invocations fail.
 
 
 ## API Gateway

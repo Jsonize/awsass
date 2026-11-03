@@ -227,9 +227,27 @@ const Module = {
         });
     },
 
+    lambdaListPublishedVersions: function (lambdaFunction, callback) {
+        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
+        let versions = [];
+        const listPage = function (marker) {
+            lambda.listVersionsByFunction({FunctionName: lambdaFunction, Marker: marker}, function (err, listVersionsByFunction) {
+                if (err) {
+                    callback(err);
+                    return;
+                }
+                versions = versions.concat(listVersionsByFunction.Versions.map(v => v.Version).filter(v => v !== "$LATEST"));
+                if (listVersionsByFunction.NextMarker)
+                    listPage(listVersionsByFunction.NextMarker);
+                else
+                    callback(undefined, versions.sort((x, y) => parseInt(x, 10) - parseInt(y, 10)));
+            });
+        };
+        listPage();
+    },
+
     scheduledLambdaSetRevision: function (cloudwatchRule, revisionString, callback) {
         const events = new AWS.CloudWatchEvents({apiVersion: '2015-10-07'});
-        const lambda = new AWS.Lambda({apiVersion: '2015-03-31'});
         events.listTargetsByRule({Rule: cloudwatchRule}, function (err, listTargetsByRule) {
             if (err) {
                 callback(err);
@@ -240,42 +258,47 @@ const Module = {
                 callback("Cannot find lambda target");
                 return;
             }
-            let arn = target.Arn;            
-            let splt = arn.split(":");
-            let oldVersion = splt[7];
-            if (splt.length > 7) {
-                splt.pop();
-                arn = splt.join(":");
-            }
-            lambda.listVersionsByFunction({FunctionName: arn, MaxItems: 10000}, function (err, listVersionsByFunction) {
+            const splt = target.Arn.split(":");
+            const functionArn = splt.slice(0, 7).join(":");
+            Module.lambdaListPublishedVersions(functionArn, function (err, versions) {
                 if (err) {
                     callback(err);
                     return;
                 }
-                if (!oldVersion)
-                    oldVersion = listVersionsByFunction.Versions[listVersionsByFunction.Versions.length - 1].Version;
+                if (versions.length === 0) {
+                    callback("Function has no published versions.");
+                    return;
+                }
+                // An unqualified or $LATEST target counts as being on the highest published version.
+                let currentVersion = splt[7];
+                if (!currentVersion || currentVersion === "$LATEST")
+                    currentVersion = versions[versions.length - 1];
+                revisionString = revisionString || "latest";
                 let newVersion = undefined;
-                switch (revisionString) {                    
+                switch (revisionString) {
                     case "latest":
-                        newVersion = listVersionsByFunction.Versions[listVersionsByFunction.Versions.length - 1].Version;
+                        newVersion = versions[versions.length - 1];
                         break;
                     case "first":
-                        newVersion = listVersionsByFunction.Versions[0].Version;
+                        newVersion = versions[0];
                         break;
                     default:
-                        if (revisionString.indexOf("+") === 0 || revisionString.indexOf("-") === 0)
-                            newVersion = (parseInt(oldVersion) + parseInt(revisionString)) + ""
-                        else
+                        if (revisionString.indexOf("+") === 0 || revisionString.indexOf("-") === 0) {
+                            const currentIndex = versions.indexOf(currentVersion);
+                            if (currentIndex < 0) {
+                                callback(`Could not find current version ${currentVersion}.`);
+                                return;
+                            }
+                            newVersion = versions[currentIndex + parseInt(revisionString, 10)];
+                        } else
                             newVersion = revisionString;
                         break;
                 }
-                if (listVersionsByFunction.Versions.findIndex(v => v.Version === newVersion) < 0) {
+                if (newVersion !== "$LATEST" && versions.indexOf(newVersion) < 0) {
                     callback(`Could not find new version.`);
                     return;
                 }
-                if (newVersion !== listVersionsByFunction.Versions[listVersionsByFunction.Versions.length - 1].Version)
-                    arn += ":" + newVersion;
-                target.Arn = arn;
+                target.Arn = newVersion === "$LATEST" ? functionArn : functionArn + ":" + newVersion;
                 events.putTargets({Rule: cloudwatchRule, Targets: [target]}, callback);
             });
         });
@@ -681,9 +704,10 @@ const Module = {
 
     lambdaKillWarmInstances: function (lambdaFunction, callback) {
         Module.resilientMapConfigurationPublishLambdaVersion(lambdaFunction, function (functionConfiguration) {
-            functionConfiguration.Environment.Variables.AWSASS = "" + (new Date()).getTime();
+            const environment = {Variables: Object.assign({}, functionConfiguration.Environment && functionConfiguration.Environment.Variables)};
+            environment.Variables.AWSASS = "" + (new Date()).getTime();
             return {
-                Environment: functionConfiguration.Environment
+                Environment: environment
             };
         }, callback);
     },
